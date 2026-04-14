@@ -284,13 +284,14 @@
           </div>
           <div class="fg">
             <label>Chế độ đồng bộ</label>
-            <div class="mt">
-              <button class="mb on" id="mC" onclick="setMode('create')">➕ Tạo mới</button>
+            <div class="mt" style="grid-template-columns:1fr 1fr 1fr;display:flex">
+              <button class="mb"    id="mC" onclick="setMode('create')">➕ Tạo mới</button>
               <button class="mb"    id="mU" onclick="setMode('update')">✏️ Cập nhật</button>
+              <button class="mb on" id="mX" onclick="setMode('upsert')">🔄 Upsert</button>
             </div>
           </div>
           <div class="al i" id="modeAl">
-            <span>ℹ️</span><span id="modeAlTx">Tạo mới: mỗi dòng tạo 1 khách hàng mới.</span>
+            <span id="modeIcon">ℹ️</span><span id="modeAlTx">Tạo mới: mỗi dòng tạo 1 khách hàng mới trong Getfly.</span>
           </div>
           <button class="btn bo bw" id="testBtn" onclick="testConn()">🔗 Kiểm tra kết nối</button>
 
@@ -361,9 +362,10 @@
       <div class="card">
         <div class="ch"><div class="ico o">🚀</div><h2>Trạng thái đồng bộ</h2></div>
         <div class="cb">
-          <div class="stats">
-            <div class="stat t"><div class="snum" id="stT">0</div><div class="slbl">Tổng cộng</div></div>
+          <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+            <div class="stat t"><div class="snum" id="stT">0</div><div class="slbl">Tổng</div></div>
             <div class="stat s"><div class="snum" id="stS">0</div><div class="slbl">Thành công</div></div>
+            <div class="stat" style="background:var(--yl);border-color:#fcd34d"><div class="snum" id="stU" style="color:var(--y)">0</div><div class="slbl">Đã cập nhật</div></div>
             <div class="stat e"><div class="snum" id="stE">0</div><div class="slbl">Lỗi</div></div>
           </div>
           <div style="margin-bottom:12px">
@@ -469,7 +471,7 @@ const ARR_F=['account_type_names','account_source_names','industry_names'];
 const DATE_F=['birthday','last_contact_birthdate'];
 
 // ── STATE ──
-let mode='create', fileHdrs=[], parsed=[], syncing=false;
+let mode='upsert', fileHdrs=[], parsed=[], syncing=false;
 let connSt='idle';
 let activeConn=null;   // { id, domain, apiKey (real), name }
 let allConns=[];        // danh sách từ DB
@@ -542,9 +544,17 @@ function setMode(m){
   mode=m;
   document.getElementById('mC').classList.toggle('on',m==='create');
   document.getElementById('mU').classList.toggle('on',m==='update');
-  document.getElementById('modeAlTx').innerHTML=m==='update'
-    ?'Cập nhật: dùng <b>Mã KH</b> tìm và cập nhật bản ghi đã có.'
-    :'Tạo mới: mỗi dòng tạo 1 khách hàng mới trong Getfly.';
+  document.getElementById('mX').classList.toggle('on',m==='upsert');
+  const cfg={
+    create:{icon:'ℹ️',cls:'i',txt:'<b>Tạo mới:</b> mỗi dòng tạo 1 khách hàng mới. Nếu mã đã tồn tại sẽ báo lỗi.'},
+    update:{icon:'ℹ️',cls:'i',txt:'<b>Cập nhật:</b> dùng <b>Mã KH</b> tìm và cập nhật bản ghi đã có. Bản ghi không tồn tại sẽ báo lỗi.'},
+    upsert:{icon:'✅',cls:'s',txt:'<b>Upsert (Khuyên dùng):</b> tự động thử Tạo mới trước, nếu mã đã tồn tại thì chuyển sang Cập nhật. Không bao giờ bị lỗi trùng mã.'},
+  };
+  const c=cfg[m]||cfg.create;
+  const al=document.getElementById('modeAl');
+  al.className=`al ${c.cls}`;
+  document.getElementById('modeIcon').textContent=c.icon;
+  document.getElementById('modeAlTx').innerHTML=c.txt;
   renderMap();
 }
 
@@ -873,8 +883,8 @@ function setProg(cur,tot,ok,err){
   document.getElementById('pbar').style.width=pct+'%';
   document.getElementById('ppct').textContent=pct+'%';
   document.getElementById('plbl').textContent=cur>=tot
-    ?`✅ Hoàn thành — ${ok} OK, ${err} lỗi`
-    :`Đang xử lý ${cur}/${tot}…`;
+    ?`✅ Hoàn thành — ${ok} thành công, ${err} lỗi`
+    :`Đang xử lý ${cur} / ${tot}…`;
 }
 
 async function doSync(){
@@ -883,57 +893,121 @@ async function doSync(){
   const apiKey=document.getElementById('apiKey').value.trim();
   if(!domain||!apiKey){log('⚠️ Chọn kết nối và nhập API Key','er');return}
   if(!parsed.length){log('⚠️ Chưa upload file','er');return}
+
   const mapping=getMap();
-  const req=mode==='update'?['account_code']:['account_name'];
-  for(const r of req){if(!mapping[r]){log(`❌ Thiếu cột bắt buộc: ${r}`,'er');return}}
+
+  // Kiểm tra trường bắt buộc
+  const needCode = mode==='update' || mode==='upsert';
+  if(needCode && !mapping['account_code']){
+    log('⚠️ Chế độ Cập nhật / Upsert cần cột <b>Mã khách hàng</b> (account_code)','er'); return;
+  }
+  if(mode==='create' && !mapping['account_name']){
+    log('⚠️ Chế độ Tạo mới cần cột <b>Họ tên</b> (account_name)','er'); return;
+  }
 
   syncing=true;
   document.getElementById('syncBtn').disabled=true;
   document.getElementById('syncBtn').innerHTML='<div class="sp"></div> Đang đồng bộ...';
   document.getElementById('stS').textContent=0;
+  document.getElementById('stU').textContent=0;
   document.getElementById('stE').textContent=0;
   setStep(4);
 
   const total=parsed.length;
-  let success=0,failed=0;
+  let created=0, updated=0, failed=0;
   const errors=[];
-  log(`🚀 Bắt đầu ${total} bản ghi · ${mode==='create'?'Tạo mới':'Cập nhật'}`,'if');
+
+  const modeLabel={'create':'➕ Tạo mới','update':'✏️ Cập nhật','upsert':'🔄 Upsert'};
+  log(`🚀 Bắt đầu đồng bộ ${total} bản ghi · Chế độ: ${modeLabel[mode]}`,'if');
   setProg(0,total,0,0);
 
   for(let i=0;i<total;i++){
     const row=parsed[i];
     const payload={};
+
     for(const[gfKey,fileCol]of Object.entries(mapping)){
       if(!fileCol)continue;
       const raw=row[fileCol];
       if(raw===''||raw==null)continue;
       const v=String(raw).trim();
       if(!v)continue;
-      if(ARR_F.includes(gfKey))payload[gfKey]=v.split(',').map(s=>s.trim()).filter(Boolean);
-      else if(DATE_F.includes(gfKey))payload[gfKey]=normDate(v);
-      else payload[gfKey]=v;
+      if(ARR_F.includes(gfKey))       payload[gfKey]=v.split(',').map(s=>s.trim()).filter(Boolean);
+      else if(DATE_F.includes(gfKey)) payload[gfKey]=normDate(v);
+      else                             payload[gfKey]=v;
     }
-    if(!Object.keys(payload).length){setProg(i+1,total,success,failed);continue}
+
+    const name=payload.account_name||payload.account_code||`Dòng ${i+1}`;
+
+    // Bỏ qua dòng trống
+    if(!Object.keys(payload).length){
+      log(`⏭ [${i+1}/${total}] Bỏ qua (dòng trống)`,'sk');
+      setProg(i+1,total,created+updated,failed);
+      continue;
+    }
+
+    // Cập nhật mode: cần current_account_code
     if(mode==='update'){
-      if(!payload.account_code){failed++;errors.push({row:i+1,error:'Thiếu Mã KH'});setProg(i+1,total,success,failed);document.getElementById('stE').textContent=failed;continue}
+      if(!payload.account_code){
+        failed++;
+        log(`❌ [${i+1}/${total}] ${name}`,'er','Thiếu Mã KH — bỏ qua');
+        errors.push({row:i+1,name,error:'Thiếu account_code để cập nhật'});
+        document.getElementById('stE').textContent=failed;
+        setProg(i+1,total,created+updated,failed);
+        continue;
+      }
       payload.current_account_code=payload.account_code;
     }
+
+    // Xác định method gửi lên proxy
+    const proxyMethod = mode==='upsert' ? 'UPSERT' : (mode==='update' ? 'PUT' : 'POST');
+
     try{
-      const res=await fetch('/api/proxy',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({apiKey,domain,method:mode==='update'?'PUT':'POST',payload})});
+      const res=await fetch('/api/proxy',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({apiKey,domain,method:proxyMethod,payload})
+      });
       const d=await res.json();
-      const name=payload.account_name||payload.account_code||`Dòng ${i+1}`;
-      if(d.ok){success++;log(`✅ [${i+1}/${total}] ${name}`,'ok')}
-      else{failed++;const msg=d.data?.message||d.error||`HTTP ${d.status}`;log(`❌ [${i+1}/${total}] ${name}`,'er',msg);errors.push({row:i+1,name,error:msg})}
-    }catch(e){failed++;log(`❌ [${i+1}/${total}] Dòng ${i+1}`,'er',e.message);errors.push({row:i+1,error:e.message})}
-    setProg(i+1,total,success,failed);
-    document.getElementById('stS').textContent=success;
-    document.getElementById('stE').textContent=failed;
+
+      if(d.ok){
+        if(d.action==='updated'){
+          updated++;
+          log(`✏️ [${i+1}/${total}] ${name}`,'ok');
+          document.getElementById('stU').textContent=updated;
+        } else {
+          created++;
+          log(`✅ [${i+1}/${total}] ${name}`,'ok');
+          document.getElementById('stS').textContent=created;
+        }
+      } else {
+        failed++;
+        // Lấy thông báo lỗi chi tiết nhất có thể
+        const errMsg = d.errorDetail || d.data?.message || d.data?.error
+          || d.error || `HTTP ${d.status}`;
+        log(`❌ [${i+1}/${total}] ${name}`,'er', errMsg);
+        errors.push({row:i+1, name, error:errMsg});
+        document.getElementById('stE').textContent=failed;
+      }
+    }catch(e){
+      failed++;
+      log(`❌ [${i+1}/${total}] ${name}`,'er',e.message);
+      errors.push({row:i+1,name,error:e.message});
+      document.getElementById('stE').textContent=failed;
+    }
+
+    setProg(i+1,total,created+updated,failed);
     await new Promise(r=>setTimeout(r,200));
   }
 
-  log(`🏁 Hoàn thành! ✅ ${success} · ❌ ${failed} · Tổng ${total}`,'ok');
-  if(errors.length)errors.slice(0,20).forEach(e=>log(`  Dòng ${e.row}: ${e.name||''}`,'er',e.error));
+  // Tổng kết
+  const total_ok=created+updated;
+  log(`🏁 Hoàn thành! ✅ Tạo mới: ${created}  ✏️ Cập nhật: ${updated}  ❌ Lỗi: ${failed}  / Tổng: ${total}`,'ok');
+  if(errors.length){
+    log(`─────── Chi tiết ${errors.length} lỗi ───────`,'er');
+    errors.slice(0,30).forEach(e=>log(`  Dòng ${e.row}: ${e.name}`,'er',e.error));
+    if(errors.length>30)log(`  ...và ${errors.length-30} lỗi khác`,'er');
+  }
+
   syncing=false;
   document.getElementById('syncBtn').disabled=false;
   document.getElementById('syncBtn').innerHTML='🔄 Đồng bộ lại';
