@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Getfly Sync — Đồng bộ khách hàng</title>
+  <!-- xlsx.js CDN — parse Excel/CSV hoàn toàn trong browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root{
+      --p:#4f46e5;--ph:#4338ca;--pl:#eef2ff;
+      --g:#10b981;--gl:#d1fae5;
+      --r:#ef4444;--rl:#fee2e2;
+      --y:#f59e0b;--yl:#fef3c7;
+      --bg:#f8fafc;--card:#fff;--bd:#e2e8f0;
+      --tx:#1e293b;--mu:#64748b;
+      --rad:12px;--sh:0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.06);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
+
+    /* ── Header ── */
+    .hdr{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;padding:18px 32px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 14px rgba(79,70,229,.35)}
+    .hdr-ico{width:44px;height:44px;background:rgba(255,255,255,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px}
+    .hdr h1{font-size:20px;font-weight:700}
+    .hdr p{font-size:13px;opacity:.8;margin-top:2px}
+    .hdr-right{margin-left:auto;text-align:right;font-size:11px;opacity:.7}
+
+    /* ── Layout ── */
+    .wrap{max-width:1160px;margin:0 auto;padding:24px 16px}
+    .grid{display:grid;grid-template-columns:340px 1fr;gap:18px}
+    @media(max-width:860px){.grid{grid-template-columns:1fr}}
+
+    /* ── Card ── */
+    .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--rad);box-shadow:var(--sh);overflow:hidden;margin-bottom:18px}
+    .card:last-child{margin-bottom:0}
+    .ch{padding:13px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px}
+    .ch h2{font-size:14px;font-weight:700}
+    .ico{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+    .ico.b{background:var(--pl)} .ico.g{background:var(--gl)} .ico.v{background:#f3e8ff} .ico.o{background:#fff7ed}
+    .cb{padding:16px}
+
+    /* ── Form ── */
+    .fg{margin-bottom:13px}
+    label{display:block;font-size:11px;font-weight:700;color:var(--mu);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+    input[type=text],input[type=password],select{width:100%;padding:8px 11px;border:1px solid var(--bd);border-radius:8px;font-size:13px;color:var(--tx);background:#fff;outline:none;transition:border .2s,box-shadow .2s}
+    input:focus,select:focus{border-color:var(--p);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+    .pfx{display:flex;align-items:center;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+    .pfx span{padding:8px 10px;background:var(--bg);font-size:12px;color:var(--mu);border-right:1px solid var(--bd);white-space:nowrap}
+    .pfx input{border:none;border-radius:0;padding:8px 10px;font-size:13px}
+    .pfx input:focus{box-shadow:none}
+    .ew{position:relative}
+    .ew input{padding-right:34px}
+    .ew-btn{position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:14px;color:var(--mu);padding:0}
+
+    /* ── Connection Status ── */
+    .cs{display:flex;align-items:center;gap:8px;padding:10px 13px;border-radius:10px;border:1px solid var(--bd);font-size:12px;font-weight:600;margin-bottom:13px;transition:all .3s}
+    .cs.idle  {background:#f1f5f9;color:var(--mu)}
+    .cs.test  {background:var(--yl);border-color:#fcd34d;color:#92400e}
+    .cs.ok    {background:var(--gl);border-color:#6ee7b7;color:#065f46}
+    .cs.fail  {background:var(--rl);border-color:#fca5a5;color:#991b1b}
+    .cd{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+    .cs.idle .cd{background:#94a3b8}
+    .cs.test .cd{background:var(--y);animation:pulse 1s ease infinite}
+    .cs.ok   .cd{background:var(--g);box-shadow:0 0 0 3px rgba(16,185,129,.2)}
+    .cs.fail .cd{background:var(--r)}
+    .cs-det{margin-left:auto;font-size:10.5px;opacity:.75}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+    /* ── Mode toggle ── */
+    .mt{display:flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+    .mb{flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--mu);transition:all .2s}
+    .mb.on{background:var(--p);color:#fff}
+
+    /* ── Upload ── */
+    .ua{border:2px dashed var(--bd);border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;transition:all .2s;position:relative;min-height:130px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .ua:hover,.ua.over{border-color:var(--p);background:var(--pl)}
+    .ua input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .ua-ico{font-size:32px;margin-bottom:7px}
+    .ua h3{font-size:14px;font-weight:600;margin-bottom:3px}
+    .ua p{font-size:12px;color:var(--mu)}
+    .fbadge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:var(--gl);color:var(--g);font-size:12px;font-weight:700;margin-top:8px}
+
+    /* ── Info pills ── */
+    .pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+    .pill{display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border:1px solid var(--bd);border-radius:6px;padding:3px 9px;font-size:11px;color:var(--mu);font-weight:600}
+
+    /* ── Alert ── */
+    .al{padding:9px 13px;border-radius:8px;font-size:12px;display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;line-height:1.6}
+    .al.i{background:var(--pl);color:#3730a3;border:1px solid #c7d2fe}
+    .al.s{background:var(--gl);color:#065f46;border:1px solid #a7f3d0}
+    .al.w{background:var(--yl);color:#92400e;border:1px solid #fcd34d}
+    .al.e{background:var(--rl);color:#991b1b;border:1px solid #fca5a5}
+
+    /* ── Steps ── */
+    .steps{display:flex;margin-bottom:20px;background:var(--card);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+    .step{flex:1;text-align:center;padding:12px 6px 10px;font-size:11px;font-weight:700;color:var(--mu);border-right:1px solid var(--bd);transition:all .3s}
+    .step:last-child{border-right:none}
+    .sn{width:22px;height:22px;border-radius:50%;background:var(--bg);border:2px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin:0 auto 4px;transition:all .3s}
+    .step.done{background:#f0fdf4;color:var(--g)} .step.done .sn{background:var(--g);border-color:var(--g);color:#fff}
+    .step.act {background:var(--pl);color:var(--p)} .step.act  .sn{background:var(--p);border-color:var(--p);color:#fff}
+
+    /* ── Mapping ── */
+    .mt-tbl{width:100%;border-collapse:collapse;font-size:12px}
+    .mt-tbl th{padding:7px 10px;background:var(--bg);font-weight:700;color:var(--mu);border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}
+    .mt-tbl td{padding:5px 10px;border-bottom:1px solid var(--bd);vertical-align:middle}
+    .mt-tbl tr:last-child td{border-bottom:none}
+    .mt-tbl select{padding:4px 8px;font-size:12px;width:100%}
+    .badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700}
+    .req{background:var(--rl);color:var(--r)}
+    .opt{background:var(--bg);color:var(--mu);border:1px solid var(--bd)}
+    .atag{display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;background:#dcfce7;color:#166534;margin-left:3px;font-weight:700}
+    .saved-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;background:#dcfce7;color:#166534;border:1px solid #a7f3d0;margin-left:auto}
+
+    /* ── Preview table ── */
+    .pw{overflow-x:auto;border-radius:8px;border:1px solid var(--bd)}
+    table.pt{border-collapse:collapse;width:100%;font-size:11px}
+    table.pt th{background:var(--bg);padding:6px 10px;font-weight:700;color:var(--mu);border-bottom:1px solid var(--bd);white-space:nowrap;text-align:left}
+    table.pt td{padding:5px 10px;border-bottom:1px solid var(--bd);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    table.pt tr:last-child td{border-bottom:none}
+    table.pt tr:hover td{background:var(--bg)}
+
+    /* ── Stats ── */
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:13px}
+    .stat{padding:12px;border-radius:10px;text-align:center;border:1px solid transparent}
+    .stat.t{background:var(--pl);border-color:#c7d2fe}
+    .stat.s{background:var(--gl);border-color:#a7f3d0}
+    .stat.e{background:var(--rl);border-color:#fca5a5}
+    .snum{font-size:26px;font-weight:800}
+    .stat.t .snum{color:var(--p)} .stat.s .snum{color:var(--g)} .stat.e .snum{color:var(--r)}
+    .slbl{font-size:11px;color:var(--mu);margin-top:1px}
+
+    /* ── Progress ── */
+    .pr{display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px}
+    .pb{height:10px;background:var(--bg);border-radius:99px;overflow:hidden;border:1px solid var(--bd)}
+    .pf{height:100%;border-radius:99px;transition:width .4s;background:linear-gradient(90deg,var(--p),#7c3aed)}
+
+    /* ── Log ── */
+    .lb{background:#0f172a;border-radius:10px;padding:11px;height:210px;overflow-y:auto;font-family:'Courier New',monospace;font-size:11.5px;line-height:1.9}
+    .ll{display:flex;gap:8px;align-items:flex-start}
+    .ll .ts{color:#475569;flex-shrink:0}
+    .ll.ok .mg{color:#34d399} .ll.er .mg{color:#f87171} .ll.if .mg{color:#93c5fd} .ll.sk .mg{color:#94a3b8}
+    .ll .dt{color:#64748b;font-size:10.5px}
+
+    /* ── Buttons ── */
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 18px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:none;transition:all .2s}
+    .bp{background:var(--p);color:#fff;width:100%}
+    .bp:hover:not(:disabled){background:var(--ph);transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,.3)}
+    .bp:disabled{opacity:.4;cursor:not-allowed}
+    .bo{background:#fff;color:var(--p);border:1px solid var(--p);font-size:12px;padding:7px 14px}
+    .bo:hover{background:var(--pl)}
+    .bo:disabled{opacity:.4;cursor:not-allowed}
+
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .sp{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;animation:spin .7s linear infinite}
+
+    .hidden{display:none!important}
+    .mw{overflow-x:auto}
+    .lb::-webkit-scrollbar{width:4px}
+    .lb::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+  </style>
+</head>
+<body>
+
+<!-- ══ HEADER ══════════════════════════════════════════════ -->
+<div class="hdr">
+  <div class="hdr-ico">🔄</div>
+  <div>
+    <h1>Getfly Sync</h1>
+    <p>Đồng bộ danh sách khách hàng lên Getfly CRM</p>
+  </div>
+  <div class="hdr-right">
+    <div id="hdrSaved" class="hidden" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.15);padding:5px 11px;border-radius:8px;font-size:12px">
+      💾 <span id="hdrDomain"></span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step act" id="s1"><div class="sn">1</div>Kết nối API</div>
+    <div class="step"     id="s2"><div class="sn">2</div>Upload file</div>
+    <div class="step"     id="s3"><div class="sn">3</div>Mapping cột</div>
+    <div class="step"     id="s4"><div class="sn">4</div>Đồng bộ</div>
+  </div>
+
+  <div class="grid">
+
+    <!-- ══ CỘT TRÁI ══ -->
+    <div>
+
+      <!-- Config -->
+      <div class="card">
+        <div class="ch">
+          <div class="ico b">⚙️</div>
+          <h2>Cấu hình kết nối Getfly</h2>
+          <span id="savedPill" class="saved-pill hidden">💾 Đã lưu</span>
+        </div>
+        <div class="cb">
+
+          <!-- Status badge -->
+          <div class="cs idle" id="cs">
+            <div class="cd"></div>
+            <span id="csText">Chưa kiểm tra kết nối</span>
+            <span class="cs-det" id="csDet"></span>
+          </div>
+
+          <div class="fg">
+            <label>Domain Getfly <span style="color:var(--r)">*</span></label>
+            <div class="pfx">
+              <span>https://</span>
+              <input type="text" id="domain" placeholder="tencongty.getflycrm.com" oninput="onCfgChange()"/>
+            </div>
+          </div>
+          <div class="fg">
+            <label>API Key <span style="color:var(--r)">*</span></label>
+            <div class="ew">
+              <input type="password" id="apiKey" placeholder="Nhập API Key của bạn..." oninput="onCfgChange()"/>
+              <button class="ew-btn" onclick="toggleEye()" title="Hiện/ẩn">👁️</button>
+            </div>
+          </div>
+          <div class="fg">
+            <label>Chế độ đồng bộ</label>
+            <div class="mt">
+              <button class="mb on" id="mC" onclick="setMode('create')">➕ Tạo mới</button>
+              <button class="mb"    id="mU" onclick="setMode('update')">✏️ Cập nhật</button>
+            </div>
+          </div>
+          <div class="al i" id="modeAl">
+            <span>ℹ️</span><span id="modeAlTx">Tạo mới: mỗi dòng tạo 1 khách hàng mới trong Getfly.</span>
+          </div>
+          <button class="bo" id="testBtn" style="width:100%" onclick="testConn()">
+            🔗 Kiểm tra kết nối
+          </button>
+
+        </div>
+      </div>
+
+      <!-- Upload -->
+      <div class="card">
+        <div class="ch"><div class="ico v">📂</div><h2>Upload file Excel / CSV</h2></div>
+        <div class="cb">
+          <div class="ua" id="upArea"
+            ondragover="onDrag(event,true)" ondragleave="onDrag(event,false)" ondrop="onDrop(event)">
+            <input type="file" id="fi" accept=".xlsx,.xls,.csv" onchange="doFile(event)"/>
+            <div class="ua-ico">📊</div>
+            <h3>Kéo thả hoặc nhấn chọn file</h3>
+            <p>Hỗ trợ .xlsx · .xls · .csv — tối đa 20MB</p>
+            <div id="fbadge" class="hidden">
+              <div class="fbadge">✅ <span id="fname"></span></div>
+            </div>
+          </div>
+          <div id="shInfo" class="hidden">
+            <div class="pills" style="margin-top:10px">
+              <span class="pill">📄 Sheet: <b id="shName"></b></span>
+              <span class="pill">📋 Header dòng <b id="hdRow"></b></span>
+              <span class="pill">🔢 <b id="totRows2"></b> bản ghi</span>
+            </div>
+          </div>
+          <div style="margin-top:11px;font-size:12px;color:var(--mu)">
+            💡 <a href="#" onclick="dlTpl()" style="color:var(--p);font-weight:700">Tải file mẫu CSV</a> để tham khảo định dạng chuẩn.
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /cột trái -->
+
+    <!-- ══ CỘT PHẢI ══ -->
+    <div>
+
+      <!-- Mapping -->
+      <div class="card">
+        <div class="ch">
+          <div class="ico g">🗂️</div>
+          <h2>Map cột file → Getfly</h2>
+          <span style="margin-left:auto;font-size:11px;color:var(--mu)" id="autoNote"></span>
+        </div>
+        <div class="cb">
+          <div class="al i">
+            <span>💡</span>
+            <span>Hệ thống tự nhận diện cột. Nhãn <b style="background:#dcfce7;color:#166534;padding:0 4px;border-radius:3px;font-size:10px">Tự động</b> đã ghép sẵn.</span>
+          </div>
+          <div class="mw">
+            <table class="mt-tbl">
+              <thead><tr><th>Trường Getfly</th><th>Loại</th><th>Cột trong file của bạn</th></tr></thead>
+              <tbody id="mapBody">
+                <tr><td colspan="3" style="text-align:center;color:var(--mu);padding:20px">⬆️ Upload file để hiển thị mapping</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="card hidden" id="pvCard">
+        <div class="ch"><div class="ico b">👁️</div><h2>Xem trước 5 dòng đầu</h2></div>
+        <div class="cb"><div class="pw" id="pvWrap"></div></div>
+      </div>
+
+      <!-- Sync -->
+      <div class="card">
+        <div class="ch"><div class="ico o">🚀</div><h2>Trạng thái đồng bộ</h2></div>
+        <div class="cb">
+
+          <div class="stats">
+            <div class="stat t"><div class="snum" id="stT">0</div><div class="slbl">Tổng cộng</div></div>
+            <div class="stat s"><div class="snum" id="stS">0</div><div class="slbl">Thành công</div></div>
+            <div class="stat e"><div class="snum" id="stE">0</div><div class="slbl">Lỗi</div></div>
+          </div>
+
+          <div style="margin-bottom:13px">
+            <div class="pr"><span id="plbl">Chưa bắt đầu</span><span id="ppct">0%</span></div>
+            <div class="pb"><div class="pf" id="pbar" style="width:0%"></div></div>
+          </div>
+
+          <div class="lb" id="logBox">
+            <div class="ll if"><span class="ts">--:--:--</span><span class="mg">Hệ thống sẵn sàng. Cấu hình API và upload file để bắt đầu...</span></div>
+          </div>
+
+          <button class="btn bp" id="syncBtn" onclick="doSync()" disabled style="margin-top:13px">
+            🚀 Bắt đầu đồng bộ
+          </button>
+
+        </div>
+      </div>
+
+    </div><!-- /cột phải -->
+  </div><!-- /grid -->
+</div><!-- /wrap -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CẤU HÌNH MAPPING TỰ ĐỘNG — file Phòng khám Sản phụ khoa
+// ═══════════════════════════════════════════════════════════
+const AUTO_MAP = {
+  'mã'               :'account_code',
+  'họ tên'           :'account_name',
+  'họ và tên'        :'account_name',
+  'tên khách hàng'   :'account_name',
+  'điện thoại'       :'phone_office',
+  'số điện thoại'    :'phone_office',
+  'sdt'              :'phone_office',
+  'email'            :'email',
+  'ngày sinh'        :'birthday',
+  'địa chỉ'          :'billing_address_street',
+  'tỉnh/thành phố'  :'province_name',
+  'tỉnh thành phố'  :'province_name',
+  'quận/huyện'      :'district_name',
+  'quận huyện'      :'district_name',
+  'phường/xã'       :'ward_name',
+  'phường xã'       :'ward_name',
+  'cơ sở'            :'account_source_names',
+  'nghề nghiệp'     :'description',
+  'người giới thiệu':'last_contact_name',
+  'website'          :'website',
+  'ghi chú'          :'description',
+  'nơi làm việc'    :'description',
+  'người phụ trách' :'account_manager_username',
+};
+
+const GF_FIELDS = [
+  {k:'account_code',          l:'Mã khách hàng',          req:true},
+  {k:'account_name',          l:'Họ tên / Tên KH',        req:true},
+  {k:'phone_office',          l:'Điện thoại',              req:false},
+  {k:'email',                 l:'Email',                   req:false},
+  {k:'birthday',              l:'Ngày sinh',               req:false},
+  {k:'billing_address_street',l:'Địa chỉ',                req:false},
+  {k:'province_name',         l:'Tỉnh/Thành phố',         req:false},
+  {k:'district_name',         l:'Quận/Huyện',             req:false},
+  {k:'ward_name',             l:'Phường/Xã',              req:false},
+  {k:'account_source_names',  l:'Nguồn / Cơ sở (mảng)',  req:false},
+  {k:'account_type_names',    l:'Loại KH (mảng)',         req:false},
+  {k:'description',           l:'Mô tả / Nghề nghiệp',   req:false},
+  {k:'website',               l:'Website',                 req:false},
+  {k:'account_manager_username',l:'Username phụ trách',   req:false},
+  {k:'last_contact_name',     l:'Người liên hệ',          req:false},
+  {k:'last_contact_phone',    l:'SĐT người liên hệ',     req:false},
+  {k:'last_contact_email',    l:'Email người liên hệ',   req:false},
+];
+
+const KNOWN_HEADERS = ['id','mã','họ tên','giới tính','năm sinh','ngày sinh','điện thoại','địa chỉ','tỉnh','quận','phường','cơ sở','email','nghề nghiệp','người giới thiệu'];
+const ARR_FIELDS    = ['account_type_names','account_source_names','industry_names'];
+const DATE_FIELDS   = ['birthday','last_contact_birthdate'];
+
+// ── State ──
+let mode     = 'create';
+let fileHdrs = [];
+let parsed   = [];
+let syncing  = false;
+let connSt   = 'idle';
+
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+const T = () => new Date().toLocaleTimeString('vi-VN');
+
+function log(msg, type='if', det=''){
+  const b=document.getElementById('logBox');
+  const d=document.createElement('div');
+  d.className=`ll ${type}`;
+  d.innerHTML=`<span class="ts">${T()}</span><span class="mg">${msg}</span>${det?`<span class="dt"> — ${det}</span>`:''}`;
+  b.appendChild(d); b.scrollTop=b.scrollHeight;
+}
+
+function setStep(n){
+  [1,2,3,4].forEach(i=>{
+    const e=document.getElementById('s'+i);
+    e.classList.remove('act','done');
+    if(i<n)  e.classList.add('done');
+    if(i===n)e.classList.add('act');
+  });
+}
+
+function chkReady(){
+  const ok=document.getElementById('domain').value.trim()&&
+           document.getElementById('apiKey').value.trim()&&
+           parsed.length>0&&!syncing;
+  document.getElementById('syncBtn').disabled=!ok;
+}
+
+// ── Ngày ──
+function excelSerial(n){
+  const d=new Date(Math.round((n-25569)*86400*1000));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+function normDate(v){
+  if(!v)return'';
+  const s=String(v).trim();
+  if(/^\d{4,6}$/.test(s)&&Number(s)>1000)return excelSerial(Number(s))||s;
+  const m=s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if(m)return`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+  return s;
+}
+
+// ── Detect header row ──
+function detectHdr(rows){
+  for(let i=0;i<Math.min(rows.length,15);i++){
+    const r=rows[i].map(c=>String(c).toLowerCase().trim());
+    if(r.filter(c=>KNOWN_HEADERS.some(h=>c.includes(h))).length>=3)return i;
+  }
+  return 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONFIG — localStorage
+// ═══════════════════════════════════════════════════════════
+function saveCfg(domain,apiKey){
+  localStorage.setItem('gf_domain',domain);
+  localStorage.setItem('gf_apiKey',apiKey);
+  localStorage.setItem('gf_at',new Date().toLocaleString('vi-VN'));
+}
+function loadCfg(){
+  return{
+    domain:localStorage.getItem('gf_domain')||'',
+    apiKey:localStorage.getItem('gf_apiKey')||'',
+    at:localStorage.getItem('gf_at')||''
+  };
+}
+function initCfg(){
+  const c=loadCfg();
+  if(c.domain){
+    document.getElementById('domain').value=c.domain;
+    // Che API Key — chỉ hiện placeholder
+    document.getElementById('apiKey').placeholder=
+      c.apiKey.slice(0,6)+'••••••••••••  (đã lưu — nhập mới để thay đổi)';
+    document.getElementById('savedPill').classList.remove('hidden');
+    const hd=document.getElementById('hdrSaved');
+    hd.classList.remove('hidden'); hd.style.display='flex';
+    document.getElementById('hdrDomain').textContent=c.domain;
+    setConnStatus('idle','Đã có cấu hình lưu — nhấn Kiểm tra để xác nhận',c.domain);
+    log(`💾 Tìm thấy cấu hình đã lưu: ${c.domain}`,'if');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONNECTION STATUS
+// ═══════════════════════════════════════════════════════════
+function setConnStatus(state,txt,det=''){
+  connSt=state;
+  const box=document.getElementById('cs');
+  box.className=`cs ${state==='ok'?'ok':state==='fail'?'fail':state==='test'?'test':'idle'}`;
+  document.getElementById('csText').textContent=txt;
+  document.getElementById('csDet').textContent=det;
+  const tb=document.getElementById('testBtn');
+  tb.disabled=(state==='test');
+  tb.innerHTML=state==='test'?'<div class="sp" style="border-top-color:#92400e"></div> Đang kiểm tra...':'🔗 Kiểm tra kết nối';
+}
+
+function onCfgChange(){
+  if(connSt==='ok'){
+    setConnStatus('idle','Chưa kiểm tra kết nối');
+    document.getElementById('savedPill').classList.add('hidden');
+  }
+  chkReady();
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEST CONNECTION
+// ═══════════════════════════════════════════════════════════
+async function testConn(){
+  const domain=document.getElementById('domain').value.trim();
+  const apiKey=document.getElementById('apiKey').value.trim()||loadCfg().apiKey;
+  if(!domain){log('⚠️ Nhập Domain Getfly','er');return}
+  if(!apiKey) {log('⚠️ Nhập API Key','er');return}
+
+  setConnStatus('test','Đang kiểm tra kết nối...',domain);
+  log(`🔗 Đang kết nối tới https://${domain}...`,'if');
+
+  try{
+    const r=await fetch('/api/test-connection',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({domain,apiKey})
+    });
+    const d=await r.json();
+    if(d.success){
+      saveCfg(domain,apiKey);
+      const t=new Date().toLocaleString('vi-VN');
+      setConnStatus('ok','✅ Kết nối thành công',`Đã lưu lúc ${t}`);
+      document.getElementById('savedPill').classList.remove('hidden');
+      const hd=document.getElementById('hdrSaved');
+      hd.classList.remove('hidden'); hd.style.display='flex';
+      document.getElementById('hdrDomain').textContent=domain;
+      log('✅ Kết nối Getfly thành công! Cấu hình đã được lưu tự động.','ok');
+      setStep(2); chkReady();
+    }else{
+      const errMap={401:'API Key không hợp lệ hoặc hết hạn',403:'Không có quyền truy cập',404:'Domain không tồn tại',429:'Quá nhiều request, thử lại sau'};
+      const msg=errMap[d.httpStatus]||d.error||'Kết nối thất bại';
+      setConnStatus('fail','❌ '+msg,d.httpStatus?`HTTP ${d.httpStatus}`:'');
+      log(`❌ Kết nối thất bại: ${msg}`,'er');
+    }
+  }catch(e){
+    setConnStatus('fail','❌ Không thể kết nối đến server');
+    log('❌ Lỗi: '+e.message,'er');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// UPLOAD & PARSE (hoàn toàn trong browser)
+// ═══════════════════════════════════════════════════════════
+function toggleEye(){const i=document.getElementById('apiKey');i.type=i.type==='password'?'text':'password'}
+function setMode(m){
+  mode=m;
+  document.getElementById('mC').classList.toggle('on',m==='create');
+  document.getElementById('mU').classList.toggle('on',m==='update');
+  document.getElementById('modeAlTx').innerHTML=m==='update'
+    ?'Cập nhật: dùng <b>Mã KH</b> tìm và cập nhật bản ghi đã có trong Getfly.'
+    :'Tạo mới: mỗi dòng tạo 1 khách hàng mới trong Getfly.';
+  renderMap();
+}
+function onDrag(e,v){e.preventDefault();document.getElementById('upArea').classList.toggle('over',v)}
+function onDrop(e){e.preventDefault();onDrag(e,false);if(e.dataTransfer.files[0])procFile(e.dataTransfer.files[0])}
+function doFile(e){if(e.target.files[0])procFile(e.target.files[0])}
+
+async function procFile(file){
+  log(`📂 Đang đọc: ${file.name}…`,'if');
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    const wsName=wb.SheetNames[0];
+    const ws=wb.Sheets[wsName];
+    const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+
+    const hdrIdx=detectHdr(raw);
+    const hdrRow=raw[hdrIdx].map(h=>String(h).trim());
+
+    // Cột có tiêu đề
+    const cols=hdrRow.map((h,i)=>({h,i})).filter(({h})=>h!=='');
+    fileHdrs=cols.map(({h})=>h);
+
+    // Parse data
+    parsed=raw.slice(hdrIdx+1)
+      .filter(r=>r.some(c=>c!==''&&c!=null))
+      .map(r=>{
+        const o={};
+        cols.forEach(({h,i})=>{
+          let v=r[i]??'';
+          // Tự convert ngày
+          if(/ngày sinh|birthday|date/i.test(h)) v=normDate(v)||v;
+          o[h]=v;
+        });
+        return o;
+      });
+
+    if(!parsed.length){log('❌ Không có dữ liệu sau header','er');return}
+
+    document.getElementById('fname').textContent=`${file.name}  (${parsed.length} dòng)`;
+    document.getElementById('fbadge').classList.remove('hidden');
+    document.getElementById('shInfo').classList.remove('hidden');
+    document.getElementById('shInfo').style.display='block';
+    document.getElementById('shName').textContent=wsName;
+    document.getElementById('hdRow').textContent=hdrIdx+1;
+    document.getElementById('totRows2').textContent=parsed.length;
+    document.getElementById('stT').textContent=parsed.length;
+
+    renderMap();
+    renderPv();
+    document.getElementById('pvCard').classList.remove('hidden');
+    log(`✅ Đọc thành công: ${parsed.length} bản ghi, ${fileHdrs.length} cột (header dòng ${hdrIdx+1})`,'ok');
+    setStep(3); chkReady();
+  }catch(e){log('❌ Lỗi đọc file: '+e.message,'er')}
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAPPING
+// ═══════════════════════════════════════════════════════════
+function autoCol(gfKey){
+  for(const h of fileHdrs){
+    if(AUTO_MAP[h.toLowerCase().trim()]===gfKey)return h;
+  }
+  return fileHdrs.find(h=>h.toLowerCase().replace(/[\s\/\-_]/g,'')=== gfKey.toLowerCase().replace(/[\s\/\-_]/g,''))||'';
+}
+function renderMap(){
+  const body=document.getElementById('mapBody');
+  let auto=0;
+  body.innerHTML=GF_FIELDS.map(f=>{
+    const isReq=f.req||(mode==='update'&&f.k==='account_code');
+    const av=fileHdrs.length?autoCol(f.k):'';
+    if(av)auto++;
+    return`<tr>
+      <td><b>${f.l}</b>${av?'<span class="atag">Tự động</span>':''}<br/><small style="color:var(--mu);font-size:10px">${f.k}</small></td>
+      <td><span class="badge ${isReq?'req':'opt'}">${isReq?'Bắt buộc':'Tuỳ chọn'}</span></td>
+      <td><select id="m_${f.k}" style="width:100%">
+        <option value="">— Không dùng —</option>
+        ${fileHdrs.map(h=>`<option value="${h}"${h===av?' selected':''}>${h}</option>`).join('')}
+      </select></td>
+    </tr>`;
+  }).join('');
+  if(fileHdrs.length) document.getElementById('autoNote').textContent=`🤖 Tự động ghép ${auto}/${GF_FIELDS.length} trường`;
+}
+function getMap(){
+  const m={};
+  GF_FIELDS.forEach(f=>{const e=document.getElementById('m_'+f.k);if(e)m[f.k]=e.value;});
+  return m;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PREVIEW
+// ═══════════════════════════════════════════════════════════
+function renderPv(){
+  const wrap=document.getElementById('pvWrap');
+  const hdrs=fileHdrs;
+  const rows=parsed.slice(0,5);
+  const ths=hdrs.map(h=>`<th>${h}</th>`).join('');
+  const trs=rows.map(r=>`<tr>${hdrs.map(h=>`<td title="${r[h]??''}">${r[h]??''}</td>`).join('')}</tr>`).join('');
+  wrap.innerHTML=`<table class="pt"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SYNC (loop chạy trong browser)
+// ═══════════════════════════════════════════════════════════
+function setProgress(cur,tot,ok,err){
+  const pct=tot?Math.round(cur/tot*100):0;
+  document.getElementById('pbar').style.width=pct+'%';
+  document.getElementById('ppct').textContent=pct+'%';
+  document.getElementById('plbl').textContent=cur>=tot
+    ?`✅ Hoàn thành — ${ok} thành công, ${err} lỗi`
+    :`Đang xử lý ${cur}/${tot}…`;
+}
+
+async function doSync(){
+  if(syncing)return;
+  const domain=document.getElementById('domain').value.trim();
+  const apiKey=document.getElementById('apiKey').value.trim()||loadCfg().apiKey;
+  if(!domain||!apiKey){log('⚠️ Nhập Domain & API Key','er');return}
+  if(!parsed.length){log('⚠️ Chưa upload file','er');return}
+
+  const mapping=getMap();
+  const req=mode==='update'?['account_code']:['account_name'];
+  for(const r of req){
+    if(!mapping[r]){log(`❌ Chưa chọn cột cho trường bắt buộc: ${r}`,'er');return}
+  }
+
+  syncing=true;
+  document.getElementById('syncBtn').disabled=true;
+  document.getElementById('syncBtn').innerHTML='<div class="sp"></div> Đang đồng bộ...';
+  document.getElementById('stS').textContent=0;
+  document.getElementById('stE').textContent=0;
+  setStep(4);
+
+  const total=parsed.length;
+  let success=0,failed=0;
+  const errors=[];
+
+  log(`🚀 Bắt đầu đồng bộ ${total} bản ghi · Chế độ: ${mode==='create'?'Tạo mới':'Cập nhật'}`,'if');
+  setProgress(0,total,0,0);
+
+  for(let i=0;i<total;i++){
+    const row=parsed[i];
+    const payload={};
+
+    for(const[gfKey,fileCol]of Object.entries(mapping)){
+      if(!fileCol)continue;
+      const raw=row[fileCol];
+      if(raw===''||raw==null)continue;
+      const v=String(raw).trim();
+      if(!v)continue;
+      if(ARR_FIELDS.includes(gfKey))        payload[gfKey]=v.split(',').map(s=>s.trim()).filter(Boolean);
+      else if(DATE_FIELDS.includes(gfKey))   payload[gfKey]=normDate(v);
+      else                                    payload[gfKey]=v;
+    }
+
+    if(!Object.keys(payload).length){
+      log(`⏭ Bỏ qua dòng ${i+1} (rỗng)`,'sk');
+      setProgress(i+1,total,success,failed);
+      continue;
+    }
+
+    if(mode==='update'){
+      if(!payload.account_code){
+        failed++;
+        log(`❌ [${i+1}/${total}] Dòng ${i+1}`,'er','Thiếu Mã KH');
+        errors.push({row:i+1,error:'Thiếu account_code'});
+        setProgress(i+1,total,success,failed);
+        document.getElementById('stE').textContent=failed;
+        continue;
+      }
+      payload.current_account_code=payload.account_code;
+    }
+
+    try{
+      const res=await fetch('/api/proxy',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({apiKey,domain,method:mode==='update'?'PUT':'POST',payload})
+      });
+      const d=await res.json();
+      const name=payload.account_name||payload.account_code||`Dòng ${i+1}`;
+
+      if(d.ok){
+        success++;
+        log(`✅ [${i+1}/${total}] ${name}`,'ok');
+      }else{
+        failed++;
+        const msg=d.data?.message||d.data?.error||d.error||`HTTP ${d.status}`;
+        log(`❌ [${i+1}/${total}] ${name}`,'er',msg);
+        errors.push({row:i+1,name,error:msg});
+      }
+    }catch(e){
+      failed++;
+      log(`❌ [${i+1}/${total}] Dòng ${i+1}`,'er',e.message);
+      errors.push({row:i+1,name:`Dòng ${i+1}`,error:e.message});
+    }
+
+    setProgress(i+1,total,success,failed);
+    document.getElementById('stS').textContent=success;
+    document.getElementById('stE').textContent=failed;
+
+    await new Promise(r=>setTimeout(r,200));
+  }
+
+  // Tổng kết
+  log(`🏁 Hoàn thành! ✅ ${success} thành công · ❌ ${failed} lỗi · Tổng ${total}`,'ok');
+  if(errors.length){
+    log(`📋 Chi tiết lỗi (${Math.min(errors.length,20)} dòng đầu):`,'er');
+    errors.slice(0,20).forEach(e=>log(`  Dòng ${e.row}: ${e.name}`,'er',e.error));
+  }
+
+  syncing=false;
+  document.getElementById('syncBtn').disabled=false;
+  document.getElementById('syncBtn').innerHTML='🔄 Đồng bộ lại';
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEMPLATE
+// ═══════════════════════════════════════════════════════════
+function dlTpl(){
+  const csv=['Mã,Họ tên,Điện thoại,Email,Ngày sinh,Địa chỉ,Tỉnh/Thành phố,Quận/Huyện,Phường/Xã,Cơ sở,Ghi chú',
+    'SGDL001,Nguyễn Thị An,0901234567,an@example.com,15/07/1990,"123 Lê Lợi, Q1",Tỉnh Lâm Đồng,Thành phố Đà Lạt,Phường 1,CS1 - Phòng khám,Khách VIP',
+    'SGDL002,Trần Thị Bình,0912345678,,20/03/1985,456 Trần Phú,Tỉnh Lâm Đồng,Huyện Đức Trọng,Thị trấn Liên Nghĩa,CS2 - Phòng khám 2,'
+  ].join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
+  a.download='getfly_mau_nhap_lieu.csv';
+  a.click();
+}
+
+// ── Khởi tạo ──
+window.addEventListener('DOMContentLoaded',initCfg);
+</script>
+</body>
+</html>
