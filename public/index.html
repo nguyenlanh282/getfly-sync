@@ -217,8 +217,14 @@
     <h1>Getfly Sync</h1>
     <p>Đồng bộ danh sách khách hàng lên Getfly CRM</p>
   </div>
-  <div style="margin-left:auto;display:flex;align-items:center;gap:8px" id="hdrConn">
-    <!-- Hiện tên kết nối đang dùng -->
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+    <div id="hdrConn"><!-- Hiện tên kết nối đang dùng --></div>
+    <button onclick="doLogout()" title="Đăng xuất"
+      style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .2s"
+      onmouseover="this.style.background='rgba(255,255,255,.25)'"
+      onmouseout="this.style.background='rgba(255,255,255,.15)'">
+      🚪 Đăng xuất
+    </button>
   </div>
 </div>
 
@@ -1077,6 +1083,32 @@ function dlTpl(){
 
 // ── Khởi tạo ──
 window.addEventListener('DOMContentLoaded',loadConns);
+
+// ── Đăng xuất ──
+async function doLogout() {
+  if (!confirm('Bạn có chắc muốn đăng xuất không?')) return;
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+  } catch {}
+  location.href = '/login';
+}
+
+// ── Kiểm tra session hết hạn (bắt 401 từ API) ──
+const _origFetch = window.fetch;
+window.fetch = async function(...args) {
+  const res = await _origFetch(...args);
+  if (res.status === 401) {
+    const clone = res.clone();
+    try {
+      const data = await clone.json();
+      if (data.error && data.error.includes('đăng nhập')) {
+        alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        location.href = '/login';
+      }
+    } catch {}
+  }
+  return res;
+};
 </script>
 </body>
 </html>
