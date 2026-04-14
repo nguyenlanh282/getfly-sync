@@ -375,6 +375,28 @@
           <div class="lb" id="logBox">
             <div class="ll if"><span class="ts">--:--:--</span><span class="mg">Hệ thống sẵn sàng...</span></div>
           </div>
+
+          <!-- Error detail panel -->
+          <div id="errPanel" class="hidden" style="margin-top:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:12px;font-weight:700;color:var(--r)">❌ Chi tiết lỗi (<span id="errCount">0</span> dòng)</span>
+              <button class="btn bk" style="font-size:11px;padding:3px 9px" onclick="exportErrors()">⬇️ Xuất CSV</button>
+            </div>
+            <div style="max-height:160px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px">
+              <table style="width:100%;border-collapse:collapse;font-size:11px" id="errTable">
+                <thead style="position:sticky;top:0;background:var(--bg)">
+                  <tr>
+                    <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap">Dòng</th>
+                    <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd)">Tên KH</th>
+                    <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd)">Mã KH</th>
+                    <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd)">Lỗi từ Getfly</th>
+                  </tr>
+                </thead>
+                <tbody id="errTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
           <button class="btn bp bw" id="syncBtn" onclick="doSync()" disabled style="margin-top:12px">
             🚀 Bắt đầu đồng bộ
           </button>
@@ -981,11 +1003,11 @@ async function doSync(){
         }
       } else {
         failed++;
-        // Lấy thông báo lỗi chi tiết nhất có thể
-        const errMsg = d.errorDetail || d.data?.message || d.data?.error
-          || d.error || `HTTP ${d.status}`;
+        const errMsg = d.errorDetail || d.data?.message || d.data?.error || d.error || `HTTP ${d.status}`;
         log(`❌ [${i+1}/${total}] ${name}`,'er', errMsg);
-        errors.push({row:i+1, name, error:errMsg});
+        // Nếu có note debug (upsert thất bại cả POST lẫn PUT)
+        if(d.note) log(`   ↳ ${d.note}`,'sk');
+        errors.push({row:i+1, name, code:payload.account_code||'', error:errMsg});
         document.getElementById('stE').textContent=failed;
       }
     }catch(e){
@@ -1000,17 +1022,46 @@ async function doSync(){
   }
 
   // Tổng kết
-  const total_ok=created+updated;
   log(`🏁 Hoàn thành! ✅ Tạo mới: ${created}  ✏️ Cập nhật: ${updated}  ❌ Lỗi: ${failed}  / Tổng: ${total}`,'ok');
   if(errors.length){
-    log(`─────── Chi tiết ${errors.length} lỗi ───────`,'er');
-    errors.slice(0,30).forEach(e=>log(`  Dòng ${e.row}: ${e.name}`,'er',e.error));
-    if(errors.length>30)log(`  ...và ${errors.length-30} lỗi khác`,'er');
+    log(`─────── Chi tiết ${errors.length} lỗi — xem bảng bên dưới ───────`,'er');
+    showErrPanel(errors);
+  } else {
+    document.getElementById('errPanel').classList.add('hidden');
   }
 
   syncing=false;
   document.getElementById('syncBtn').disabled=false;
   document.getElementById('syncBtn').innerHTML='🔄 Đồng bộ lại';
+}
+
+// ─────────────────────────────────────────────
+// ERROR PANEL
+// ─────────────────────────────────────────────
+let lastErrors=[];
+function showErrPanel(errors){
+  lastErrors=errors;
+  document.getElementById('errCount').textContent=errors.length;
+  document.getElementById('errPanel').classList.remove('hidden');
+  const tbody=document.getElementById('errTbody');
+  tbody.innerHTML=errors.map(e=>`
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:5px 10px;color:var(--mu)">${e.row}</td>
+      <td style="padding:5px 10px;font-weight:600">${e.name||''}</td>
+      <td style="padding:5px 10px;color:var(--mu);font-family:monospace">${e.code||''}</td>
+      <td style="padding:5px 10px;color:var(--r)">${e.error||''}</td>
+    </tr>`).join('');
+}
+
+function exportErrors(){
+  if(!lastErrors.length)return;
+  const rows=[['Dòng','Tên KH','Mã KH','Lỗi'],...lastErrors.map(e=>[e.row,e.name||'',e.code||'',e.error||''])];
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
+  a.download=`getfly_loi_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  log('⬇️ Đã xuất file CSV danh sách lỗi','if');
 }
 
 // ── Template ──
